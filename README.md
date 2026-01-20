@@ -3,22 +3,19 @@
 Deferred shading with ray traced shadows and ambient occlusion.
 This project uses the Mandrill Vulkan framework to demonstrate how to implement deferred shading and combine it with the ray tracing pipeline.
 
-### Resolve
-
 <p align="center">
 	<img src="img/resolve.png" alt="screenshot" width=50%>
+	Final resolved image
 </p>
-
-### Shadow from direct lighting
 
 <p align="center">
 	<img src="img/shadow.png" alt="screenshot" width=50%>
+	Shadow from direct lighting (one light source)
 </p>
-
-### Ambient occlusion
 
 <p align="center">
 	<img src="img/ao.png" alt="screenshot" width=50%>
+	Ambient occlusion after smoothing
 </p>
 
 
