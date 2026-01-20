@@ -1,0 +1,91 @@
+#version 460
+#extension GL_EXT_ray_tracing : require
+
+#include "RayPayload.glsl"
+
+#define M_PI 3.14159265358979323846
+
+layout(set = 0, binding = 0) uniform CameraUniformDynamic {
+    mat4 view;
+    mat4 view_inv;
+    mat4 proj;
+    mat4 proj_inv;
+} camera;
+
+layout(set = 1, binding = 0) uniform accelerationStructureEXT scene;
+
+layout(set = 2, binding = 0, rgba16f) uniform image2D inPosition;
+layout(set = 2, binding = 1, rgba16f) uniform image2D inNormal;
+layout(set = 2, binding = 2, rgba8) uniform image2D inAlbedo;
+layout(set = 2, binding = 3, rgba8) uniform image2D inShadowDirectAndAO;
+
+layout(push_constant) uniform PushConstant {
+	vec3 lightPosition;
+	float aoDistance;
+    uint renderMode;
+} pushConstant;
+
+layout(location = 0) rayPayloadEXT RayPayload rayPayload;
+
+float traceDistance(vec3 origin, vec3 direction, float tMin, float tMax) {
+    traceRayEXT(scene, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin, tMin, direction, tMax, 0);
+	return distance(rayPayload.hitPoint, origin);
+}
+
+vec2 hash2(inout float seed) {
+    return fract(sin(vec2(seed+=0.1, seed+=0.1)) * vec2(43758.5453123, 22578.1459123));
+}
+
+vec3 cosineSampleHemisphere(vec3 N, inout float seed) {
+	vec2 u = hash2(seed);
+    float r = sqrt(u.x);
+    float theta = 2.0 * M_PI * u.y;
+ 
+    vec3 B = normalize(cross(N, vec3(0.0, 1.0, 1.0)));
+	vec3 T = cross(B, N);
+    
+    return normalize(r * sin(theta) * B + sqrt(1.0 - u.x) * N + r * cos(theta) * T);
+}
+
+float calculateShadow(vec3 origin, vec3 lightDirection) {
+	float tMin = 0.1;
+	float tMax = 1.1 * distance(origin, pushConstant.lightPosition);
+
+	float sceneDist = traceDistance(origin, lightDirection, tMin, tMax);
+	float lightDist = distance(origin, pushConstant.lightPosition);
+	return sceneDist > lightDist - 0.001 ? 1.0 : 0.0;
+}
+
+float calculateAO(vec3 origin, vec3 normalDirection) {
+	float tMin = 0.1;
+	float tMax = pushConstant.aoDistance;
+
+	float seed = origin.x + origin.y * 3.43121412313 + origin.z * 6.4562895245;
+
+	float accDist = 0.0;
+	for (int i = 0; i < 16; i++) {
+		vec3 direction = cosineSampleHemisphere(normalDirection, seed);
+		accDist += traceDistance(origin, direction, tMin, tMax);
+		seed = mod(seed * 1.42387043152, 13.0);
+	}
+	accDist /= 16.0;
+	accDist /= tMax;
+
+	return pow(accDist, 0.9);
+}
+
+void main()
+{
+	const vec2 pixelCenter = vec2(gl_LaunchIDEXT.xy) + vec2(0.5);
+	const vec2 inUV = pixelCenter / vec2(gl_LaunchSizeEXT.xy);
+
+	vec3 origin = imageLoad(inPosition, ivec2(gl_LaunchIDEXT.xy)).rgb;
+	vec3 lightDirection = normalize(pushConstant.lightPosition - origin);
+	vec3 normalDirection = normalize(imageLoad(inNormal, ivec2(gl_LaunchIDEXT.xy)).rgb);
+
+
+	float shadow = calculateShadow(origin, lightDirection);
+	float ao = calculateAO(origin, normalDirection);
+
+	imageStore(inShadowDirectAndAO, ivec2(gl_LaunchIDEXT.xy), vec4(shadow, ao, 0.0, 0.0));
+}
