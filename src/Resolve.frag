@@ -13,6 +13,7 @@ layout(push_constant) uniform PushConstant {
     vec3 lightPosition;
     float aoDistance;
     uint renderMode;
+    uint frame;
 } pushConstant;
 
 void main() {

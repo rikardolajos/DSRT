@@ -23,6 +23,7 @@ layout(push_constant) uniform PushConstant {
 	vec3 lightPosition;
 	float aoDistance;
     uint renderMode;
+	uint frame;
 } pushConstant;
 
 layout(location = 0) rayPayloadEXT RayPayload rayPayload;
@@ -32,11 +33,44 @@ float traceDistance(vec3 origin, vec3 direction, float tMin, float tMax) {
 	return distance(rayPayload.hitPoint, origin);
 }
 
-vec2 hash2(inout float seed) {
-    return fract(sin(vec2(seed+=0.1, seed+=0.1)) * vec2(43758.5453123, 22578.1459123));
+uvec4 pcg4d(uvec4 v) {
+    v = v * 1664525u + 1013904223u;
+    
+    v.x += v.y*v.w;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+    v.w += v.y*v.z;
+    
+    v ^= v >> 16u;
+    
+    v.x += v.y*v.w;
+    v.y += v.z*v.x;
+    v.z += v.x*v.y;
+    v.w += v.y*v.z;
+    
+    return v;
 }
 
-vec3 cosineSampleHemisphere(vec3 N, inout float seed) {
+vec2 hash2(inout vec4 seed) {
+	uvec4 state = uvec4(floatBitsToUint(seed.x), floatBitsToUint(seed.y), floatBitsToUint(seed.z), floatBitsToUint(seed.w));
+	state = pcg4d(state);
+	seed = vec4(uintBitsToFloat(state.x), uintBitsToFloat(state.y), uintBitsToFloat(state.z), uintBitsToFloat(state.w));
+	return vec2(float(state.x), float(state.y)) / float(0xffffffffu);
+}
+
+vec3 uniformSampleHemisphere(vec3 N, inout vec4 seed) {
+    vec2 u = hash2(seed);
+    
+    float r = sqrt(1.0 - u.x * u.x);
+    float phi = 2.0 * M_PI * u.y;
+    
+    vec3  B = normalize( cross( N, vec3(0.0, 1.0, 1.0) ) );
+	vec3  T = cross( B, N );
+    
+    return normalize(r * sin(phi) * B + u.x * N + r * cos(phi) * T);
+}
+
+vec3 cosineSampleHemisphere(vec3 N, inout vec4 seed) {
 	vec2 u = hash2(seed);
     float r = sqrt(u.x);
     float theta = 2.0 * M_PI * u.y;
@@ -60,18 +94,17 @@ float calculateAO(vec3 origin, vec3 normalDirection) {
 	float tMin = 0.1;
 	float tMax = pushConstant.aoDistance;
 
-	float seed = origin.x + origin.y * 3.43121412313 + origin.z * 6.4562895245;
+	vec4 seed = vec4(origin, pushConstant.frame);
 
 	float accDist = 0.0;
 	for (int i = 0; i < 16; i++) {
-		vec3 direction = cosineSampleHemisphere(normalDirection, seed);
+		vec3 direction = uniformSampleHemisphere(normalDirection, seed);
 		accDist += traceDistance(origin, direction, tMin, tMax);
-		seed = mod(seed * 1.42387043152, 13.0);
 	}
 	accDist /= 16.0;
 	accDist /= tMax;
 
-	return pow(accDist, 0.9);
+	return pow(accDist, 1.0);
 }
 
 void main()
@@ -82,7 +115,6 @@ void main()
 	vec3 origin = imageLoad(inPosition, ivec2(gl_LaunchIDEXT.xy)).rgb;
 	vec3 lightDirection = normalize(pushConstant.lightPosition - origin);
 	vec3 normalDirection = normalize(imageLoad(inNormal, ivec2(gl_LaunchIDEXT.xy)).rgb);
-
 
 	float shadow = calculateShadow(origin, lightDirection);
 	float ao = calculateAO(origin, normalDirection);

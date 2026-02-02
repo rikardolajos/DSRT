@@ -14,7 +14,8 @@ public:
 	struct PushConstants {
 		glm::vec3 lightPosition;
 		float aoDistance;
-		int renderMode;
+		unsigned renderMode;
+		unsigned frame;
 	};
 
 	static std::shared_ptr<Image> createColorAttachmentImage(std::shared_ptr<Device> pDevice, uint32_t width,
@@ -202,13 +203,14 @@ public:
 
 		// Load scene
 		auto meshIndices = mpScene->addMeshFromFile(GetResourcePath("scenes/crytek_sponza/sponza.obj"));
-		std::shared_ptr<Node> pNode = mpScene->addNode();
-		pNode->setPipeline(mPipelines[GBUFFER_PASS]); // Render scene with first pass pipeline
+		uint32_t nodeIndex = mpScene->addNode();
+		auto& pNode = mpScene->getNode(nodeIndex);
+		pNode.setPipeline(mPipelines[GBUFFER_PASS]); // Render scene with first pass pipeline
 		for (auto meshIndex : meshIndices) {
-			pNode->addMesh(meshIndex);
+			pNode.addMesh(meshIndex);
 		}
 		// Scale down the model
-		pNode->setTransform(glm::scale(glm::vec3(0.01f)));
+		pNode.setTransform(glm::scale(glm::vec3(0.01f)));
 
 		mpScene->compile(mpSwapchain->getFramesInFlightCount());
 		mpScene->createDescriptors(mPipelines[GBUFFER_PASS]->getShader()->getDescriptorSetLayouts(),
@@ -235,7 +237,7 @@ public:
 		mPipelines[GBUFFER_PASS]->setCullMode(VK_CULL_MODE_BACK_BIT);
 
 		// Setup camera
-		mpCamera = mpDevice->createCamera(mpWindow, mpSwapchain);
+		mpCamera = mpDevice->createCamera(mpSwapchain->getFramesInFlightCount());
 		mpCamera->setPosition(glm::vec3(5.0f, 0.0f, 0.0f));
 		mpCamera->setTarget(glm::vec3(0.0f, 0.0f, 0.0f));
 		mpCamera->setFov(60.0f);
@@ -256,7 +258,7 @@ public:
 		mpSwapchain->waitForFence();
 
 		if (!keyboardCapturedByGUI() && !mouseCapturedByGUI()) {
-			mpCamera->update(delta, getCursorDelta());
+			mpCamera->update(mpWindow, delta, getCursorDelta(), mpSwapchain->getInFlightIndex());
 		}
 
 		mTime += delta;
@@ -272,7 +274,7 @@ public:
 	{
 		// Check if camera matrix and attachments need to be updated
 		if (mpSwapchain->recreated()) {
-			mpCamera->updateAspectRatio();
+			mpCamera->setAspectRatio(mpSwapchain->getAspectRatio());
 			createAttachments();
 			createAttachmentDescriptor();
 			createRayTracingDescriptor();
@@ -306,7 +308,8 @@ public:
 		PushConstants pushConstants = {
 			.lightPosition = mLightPosition,
 			.aoDistance = mAoDistance,
-			.renderMode = mRenderMode,
+			.renderMode = static_cast<unsigned>(mRenderMode),
+			.frame = mCurrentFrame,
 		};
 		vkCmdPushConstants(cmd, pRtPipeline->getLayout(), VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0,
 			sizeof(PushConstants), &pushConstants);
@@ -353,6 +356,8 @@ public:
 		// Submit command buffer to rasterizer and present swapchain frame
 		mpResolvePass->end(cmd);
 		mpSwapchain->present(cmd, mpResolvePass->getOutput());
+
+		mCurrentFrame += 1;
 	}
 
 	void appGUI(ImGuiContext* pContext)
@@ -421,6 +426,7 @@ private:
 	float mAoDistance = 5.0f;
 
 	int mRenderMode = 0;
+	unsigned mCurrentFrame = 0;
 };
 
 int main()
