@@ -14,6 +14,7 @@ layout(push_constant) uniform PushConstant {
     float aoDistance;
     uint renderMode;
     uint frame;
+    uint blur;
 } pushConstant;
 
 void main() {
@@ -24,13 +25,17 @@ void main() {
     float shadow = imageLoad(inShadowDirectAndAO, coord).r;
 
     float ao = 0.0;
-    const int kernelSize = 3;
-    for (int x = -kernelSize; x < kernelSize; x++) {
-        for (int y = -kernelSize; y < kernelSize; y++) {
-            ao += imageLoad(inShadowDirectAndAO, coord + ivec2(x, y)).g;
+    if (pushConstant.blur == 1) {
+        const int r = 1; // blur radius, 3x3
+        for (int x = -r; x <= r; x++) {
+            for (int y = -r; y <= r; y++) {
+                ao += imageLoad(inShadowDirectAndAO, coord + ivec2(x, y)).g;
+            }
         }
+        ao /= float((2 * r + 1) * (2 * r + 1));
+    } else {
+        ao = imageLoad(inShadowDirectAndAO, coord).g;
     }
-    ao /= float(kernelSize * kernelSize);
 
     float d = length(pushConstant.lightPosition - fragPos);
     vec3 L = normalize(pushConstant.lightPosition - fragPos);

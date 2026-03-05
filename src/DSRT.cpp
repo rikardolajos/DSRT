@@ -16,6 +16,7 @@ public:
 		float aoDistance;
 		unsigned renderMode;
 		unsigned frame;
+		unsigned blur;
 	};
 
 	static std::shared_ptr<Image> createColorAttachmentImage(std::shared_ptr<Device> pDevice, uint32_t width,
@@ -264,9 +265,9 @@ public:
 		mTime += delta;
 
 		mLightPosition = glm::vec3(
-			7.0 * sin(mTime / 3.0),
-			2.5 * sin(mTime / 5.0) + 2.5,
-			0.0
+			7.0f * sinf(mTime / 3.0f),
+			2.5f * sinf(mTime / 5.0f) + 2.5f,
+			0.0f
 		);
 	}
 
@@ -310,6 +311,7 @@ public:
 			.aoDistance = mAoDistance,
 			.renderMode = static_cast<unsigned>(mRenderMode),
 			.frame = mCurrentFrame,
+			.blur = mBlur ? 1u : 0u,
 		};
 		vkCmdPushConstants(cmd, pRtPipeline->getLayout(), VK_SHADER_STAGE_RAYGEN_BIT_KHR, 0,
 			sizeof(PushConstants), &pushConstants);
@@ -378,6 +380,7 @@ public:
 			};
 			ImGui::Combo("Render mode", &mRenderMode, renderModes, IM_ARRAYSIZE(renderModes));
 			ImGui::SliderFloat("AO Distance", &mAoDistance, 0.1f, 20.0f);
+			ImGui::Checkbox("AO Blur", &mBlur);
 		}
 
 		ImGui::End();
@@ -424,6 +427,7 @@ private:
 	float mTime = 0.0f;
 	glm::vec3 mLightPosition = glm::vec3(0.0f, 0.0f, 0.0f);
 	float mAoDistance = 5.0f;
+	bool mBlur = 0;
 
 	int mRenderMode = 0;
 	unsigned mCurrentFrame = 0;
